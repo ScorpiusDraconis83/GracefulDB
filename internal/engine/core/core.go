@@ -70,6 +70,8 @@ func SetAccessFlags(sDB, sUser string, stFlags gtypes.TAccessFlags) {
 
 func (s *tStorageInfo) Load() bool {
 	// This method is complete
+	var isMkDir bool = false
+
 	mxStorageBlock.Lock()
 	defer mxStorageBlock.Unlock()
 
@@ -79,15 +81,25 @@ func (s *tStorageInfo) Load() bool {
 	s.Removed = make([]TDBInfo, 0)
 	s.Access = make(map[string]gtypes.TAccess)
 
+labelChDir:
 	slFiles, err := os.ReadDir(StLocalCoreSettings.Storage)
-	if err != nil {
+	if err != nil && !isMkDir {
+		errMkDir := os.MkdirAll(StLocalCoreSettings.Storage, 0660)
+		if errMkDir != nil {
+			slog.Error("Problems accessing the file system.", slog.String("err", err.Error()))
+			return false
+		}
+		slog.Info("A storage folder has been created, according to the configuration file.")
+		isMkDir = true
+		goto labelChDir
+	} else if err != nil && isMkDir {
+		slog.Error("Problems accessing the file system.", slog.String("err", err.Error()))
 		return false
 	}
 
 	for _, file := range slFiles {
 		if file.IsDir() {
 			sNameDir := file.Name()
-			// dbInfoFile := fmt.Sprintf("%s%s/%s", LocalCoreSettings.Storage, nameDir, INFOFILE_DB)
 			sDBInfoFile := filepath.Join(StLocalCoreSettings.Storage, sNameDir, INFOFILE_DB)
 			err := ecowriter.ReadJSON(sDBInfoFile, &stDBInfo)
 			if err == nil {
@@ -116,7 +128,6 @@ func (s *tStorageInfo) Load() bool {
 func (s *tStorageInfo) Save() bool {
 	// This method is complete
 	// Don't use mutex
-	// infoStorageFile := fmt.Sprintf("%s%s", LocalCoreSettings.Storage, INFOFILE_STORAGE)
 	sInfoStorageFile := filepath.Join(StLocalCoreSettings.Storage, INFOFILE_STORAGE)
 	return ecowriter.WriteJSON(sInfoStorageFile, s.Access) == nil
 }
@@ -134,7 +145,6 @@ type TDBInfo struct {
 func (d TDBInfo) Save() bool {
 	// This method is complete
 	// Don't use mutex
-	// path := fmt.Sprintf("%s%s/%s", LocalCoreSettings.Storage, d.Folder, INFOFILE_DB)
 	sPath := filepath.Join(StLocalCoreSettings.Storage, d.Folder, INFOFILE_DB)
 	return ecowriter.WriteJSON(sPath, d) == nil
 }
@@ -195,7 +205,6 @@ func LoadLocalCoreSettings(cfg *config.TConfig) tCoreSettings {
 func Start(cfg *config.TConfig) {
 	// -
 	StLocalCoreSettings = LoadLocalCoreSettings(cfg)
-	// RegExpCollection = CompileRegExpCollection()
 
 	if !StStorageInfo.Load() {
 		slog.Error("Storage activation error !!!")
